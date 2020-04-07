@@ -23,7 +23,7 @@ def inputs():
     parser.add_argument('--dropout_prob1', default=0.5, type=float, help='Dropout probability 1 (default = 50%)')
     parser.add_argument('--dropout_prob2', default=0.5, type=float, help='Dropout probability 2 (default = 50%)')
     parser.add_argument('--epochs', default=3, type=int, help='Number of epochs for training (default = 3)')
-    parser.add_argument('--gpu', default = False, action='store_true', dest='gpu', help='Use GPU for training')
+    parser.add_argument('--gpu', default = True, action='store_true', dest='gpu', help='Use GPU for training')
 
     #Consolidate inputs 
     inputs = parser.parse_args()
@@ -84,22 +84,18 @@ def classifier(hidden_layer1, hidden_layer2, dropout_prob1, dropout_prob2):
                                nn.LogSoftmax(dim=1))
     
     model.classifier = classifier
+    model.to('cuda')
     return model
 
 
 #4. VALIDATION FUNCTION
-def validate(model, data_loader, criterion, use_gpu):
+def validate(model, data_loader, criterion):
     test_loss = 0
     accuracy = 0
-    if use_gpu and torch.cuda.is_available():
-        model.to('cuda')
+    model.to('cuda')
         
     for ii, (inputs, labels) in enumerate(data_loader):
-        
-        if use_gpu == True:
-            inputs, labels = images.to('cuda'), labels.to('cuda')
-        else:
-            pass
+        inputs, labels = inputs.to('cuda'), labels.to('cuda')
         
         output = model.forward(inputs)
         test_loss += criterion(output, labels).item()
@@ -112,22 +108,21 @@ def validate(model, data_loader, criterion, use_gpu):
 
 
 #5. TRAIN CLASSIFIER FUNCTION
-def train_model(model, epochs, train_loader, valid_loader, criterion, optimizer, gpu_mode):
+def train_model(model, epochs, train_loader, valid_loader, criterion, optimizer, use_gpu):
     steps = 0
     print_every = 10
 
-    if gpu_mode == True:
+    if use_gpu == True:
         model.to('cuda')
     else:
         pass
         
     for epoch in range(epochs):
-        model.train()
         running_loss = 0
         
         for ii, (inputs, labels) in enumerate(train_loader):
             steps += 1        
-            inputs, labels = inputs.to(device), labels.to(device)
+            inputs, labels = inputs.to('cuda'), labels.to('cuda')
         
             optimizer.zero_grad()        
        
@@ -156,8 +151,8 @@ def train_model(model, epochs, train_loader, valid_loader, criterion, optimizer,
 
 
 #6. TEST MODEL FUNCTION
-def test_model(model, test_loader, criterion, gpu_mode):
-    if gpu_mode == True:
+def test_model(model, test_loader, criterion, use_gpu):
+    if use_gpu == True:
         model.to('cuda')
     else:
         pass
@@ -179,42 +174,3 @@ def save_model(model, epochs, optimizer):
 
     torch.save(checkpoint, 'checkpoint_part2.pth')
 
-#8. LOAD MODEL FUNCTION
-comm = '''
-def load_checkpoint(filename):
-    checkpoint = torch.load(filename)
-    model = models.vgg16(pretrained=True)
-    # Freeze parameters
-    for param in model.parameters():
-        param.requires_grad = False
-    classifier = nn.Sequential(nn.Linear(25088, 6320, bias=True),
-                           nn.ReLU(),
-                           nn.Dropout(.5),
-                           nn.Linear(6320, 1580, bias=True),
-                           nn.ReLU(),
-                           nn.Dropout(.5),
-                           nn.Linear(1580, 102, bias=True),
-                           nn.LogSoftmax(dim=1))
-    
-    classifier.load_state_dict(checkpoint['classifier_state_dict'])
-    model.classifier = classifier
-    model.class_to_idx = checkpoint['class_to_idx']
-    criterion = nn.NLLLoss()
-    optimizer = optim.Adam(model.classifier.parameters(), lr=0.003)
-    optimizer.load_state_dict(checkpoint['state_optimizer'])
-    return (model, optimizer, criterion)
-
-
-
-
-def load_model(checkpoint_path):
-    trained_model = torch.load(checkpoint_path)
-    model = build_network(arch=trained_model['arch'], hidden_dim=trained_model['hidden_dim'],
-                          output_dim=102, drop_prob=0)
-
-    model.class_to_idx = trained_model['class_to_idx']
-    model.load_state_dict(trained_model['state_dict'])
-    print(f"Successfully loaded model with arch {trained_model['arch']}")
-    return model
-
-'''
