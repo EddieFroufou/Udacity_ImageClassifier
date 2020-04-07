@@ -32,7 +32,7 @@ use_gpu = inputs.gpu
 
 #defining pre-trained model
 model = models.vgg16(pretrained=True)
-
+model.cuda()
 
 # MAY THE GAMES BEGIN!
 #1. LOAD PRE-TREATED DATA
@@ -43,13 +43,12 @@ classifier(hidden_layer1, hidden_layer2, dropout_prob1, dropout_prob2)
 
 #3. TRAIN MODEL
 criterion = nn.NLLLoss()
-optimizer = optim.Adam(model.classifier.parameters(), learning_rate)
+optimizer_base = optim.Adam(model.classifier.parameters(), learning_rate)
 
-test_loss, accuracy = validate(model, train_loader, criterion, use_gpu)
-model, optimizer = train_model(model, epochs, train_loader, valid_loader, criterion, optimizer, gpu_mode)
+model, optimizer = train_model(model, epochs, train_loader, valid_loader, criterion, optimizer_base, use_gpu)
 
 #4. TEST MODEL
-test_model(model, test_loader, criterion, gpu_mode)
+test_model(model, test_loader, criterion, use_gpu)
 
 #5. SAVE MODEL
 save_model(model, epochs, optimizer)
