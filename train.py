@@ -9,7 +9,7 @@ from torchvision import datasets, transforms, models
 import matplotlib.pyplot as plt
 import seaborn as sns
 #importing utility functions
-from functions import inputs, data_loader, classifier, validate, train_model, test_model, save_model
+from functions import inputs, data_loader, classifier, validate, train_model, test_model, save_model, train_network
 
 #image mapping, getting it out of the way
 import json
@@ -29,6 +29,7 @@ dropout_prob1 = inputs.dropout_prob1
 dropout_prob2 = inputs.dropout_prob2
 epochs = inputs.epochs
 use_gpu = inputs.gpu
+print_every = inputs.print_every
 
 #defining pre-trained model
 model = models.vgg16(pretrained=True)
@@ -42,10 +43,7 @@ train_loader, valid_loader, test_loader = data_loader(data_dir)
 classifier(hidden_layer1, hidden_layer2, dropout_prob1, dropout_prob2)
 
 #3. TRAIN MODEL
-criterion = nn.NLLLoss()
-optimizer_base = optim.Adam(model.classifier.parameters(), learning_rate)
-
-model, optimizer = train_model(model, epochs, train_loader, valid_loader, criterion, optimizer_base, use_gpu)
+model, optimizer = train_network(model, train_loader, valid_loader, epochs, print_every, learning_rate, use_gpu)
 
 #4. TEST MODEL
 test_model(model, test_loader, criterion, use_gpu)
