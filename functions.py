@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader
 #3 and beyond
 from torchvision import models
 from torch import nn
+from torch import optim
 
 
 
@@ -24,7 +25,8 @@ def inputs():
     parser.add_argument('--dropout_prob2', default=0.5, type=float, help='Dropout probability 2 (default = 50%)')
     parser.add_argument('--epochs', default=3, type=int, help='Number of epochs for training (default = 3)')
     parser.add_argument('--gpu', default = True, action='store_true', dest='gpu', help='Use GPU for training')
-
+    parser.add_argument('--print_every', default=5, type=int, help='Number of epochs for training (default = 5)')
+    
     #Consolidate inputs 
     inputs = parser.parse_args()
 
@@ -108,6 +110,44 @@ def validate(model, data_loader, criterion):
 
 
 #5. TRAIN CLASSIFIER FUNCTION
+def train_network(model, dataloaders, validloaders, epochs, print_every,learning_rate=0.001, gpu=True):
+    #define loss function
+    criterion = nn.NLLLoss()
+    # Only train the classifier parameters, feature parameters are frozen
+    optimizer = optim.Adam(model.classifier.parameters(), lr=learning_rate)
+    steps=0
+    #enable dropout in trainning dataset:
+    model.train()
+    # if GPU is available and GPU is set , then use GPU , or use CPU.
+    if gpu == True:
+        model.to('cuda')
+    for e in range(epochs):
+        running_loss = 0
+        for ii, (inputs,labels) in enumerate(dataloaders):
+            steps += 1
+            #use Variable to wrap the tensor and enable gradient descent.
+            inputs.requires_grad_(True)
+            labels.requires_grad_(True)
+            #move tensor to target device(GPU|CPU)
+            inputs, labels = inputs.to('cuda'), labels.to('cuda')
+            #optimizer gradient to zero
+            optimizer.zero_grad()
+            #forward and backwards
+            outputs=model.forward(inputs)
+            loss=criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+            running_loss += loss.item()
+            if steps % print_every == 0 :
+                valid_loss,accuracy = validate(model,validloaders,criterion)
+                print("Epoch {} / {}..".format(e+1,epochs),
+                "loss: {:.4f}".format(running_loss/print_every),
+                "Validateion Loss: {:.3f}.. ".format(valid_loss),
+                "Validation Accuracy: {:.3f}".format(accuracy)/len(validloaders))
+        running_loss=0
+    return model, optimizer
+
+# Original training function... no longer being used in train.py script
 def train_model(model, epochs, train_loader, valid_loader, criterion, optimizer, use_gpu):
     steps = 0
     print_every = 10
@@ -174,3 +214,42 @@ def save_model(model, epochs, optimizer):
 
     torch.save(checkpoint, 'checkpoint_part2.pth')
 
+#8. LOAD MODEL FUNCTION
+comm = '''
+def load_checkpoint(filename):
+    checkpoint = torch.load(filename)
+    model = models.vgg16(pretrained=True)
+    # Freeze parameters
+    for param in model.parameters():
+        param.requires_grad = False
+    classifier = nn.Sequential(nn.Linear(25088, 6320, bias=True),
+                           nn.ReLU(),
+                           nn.Dropout(.5),
+                           nn.Linear(6320, 1580, bias=True),
+                           nn.ReLU(),
+                           nn.Dropout(.5),
+                           nn.Linear(1580, 102, bias=True),
+                           nn.LogSoftmax(dim=1))
+    
+    classifier.load_state_dict(checkpoint['classifier_state_dict'])
+    model.classifier = classifier
+    model.class_to_idx = checkpoint['class_to_idx']
+    criterion = nn.NLLLoss()
+    optimizer = optim.Adam(model.classifier.parameters(), lr=0.003)
+    optimizer.load_state_dict(checkpoint['state_optimizer'])
+    return (model, optimizer, criterion)
+
+
+
+
+def load_model(checkpoint_path):
+    trained_model = torch.load(checkpoint_path)
+    model = build_network(arch=trained_model['arch'], hidden_dim=trained_model['hidden_dim'],
+                          output_dim=102, drop_prob=0)
+
+    model.class_to_idx = trained_model['class_to_idx']
+    model.load_state_dict(trained_model['state_dict'])
+    print(f"Successfully loaded model with arch {trained_model['arch']}")
+    return model
+
+'''
