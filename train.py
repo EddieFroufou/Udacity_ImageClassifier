@@ -9,7 +9,7 @@ from torchvision import datasets, transforms, models
 import matplotlib.pyplot as plt
 import seaborn as sns
 #importing utility functions
-from functions import inputs, data_loader, classifier, validate, train_model, test_model, save_model, train_network
+from functions import inputs, data_loader, classifier, validate, test_model, save_model, train_network
 
 #image mapping, getting it out of the way
 import json
@@ -31,22 +31,18 @@ epochs = inputs.epochs
 use_gpu = inputs.gpu
 print_every = inputs.print_every
 
-#defining pre-trained model
-model = models.vgg16(pretrained=True)
-model.cuda()
-
 # MAY THE GAMES BEGIN!
 #1. LOAD PRE-TREATED DATA
-train_loader, valid_loader, test_loader = data_loader(data_dir)
+train_loader, valid_loader, test_loader, train_data, valid_data, test_data = data_loader(data_dir)
 
 #2. CLASSIFY DATA
-classifier(hidden_layer1, hidden_layer2, dropout_prob1, dropout_prob2)
+model = classifier(hidden_layer1, hidden_layer2, dropout_prob1, dropout_prob2)
 
 #3. TRAIN MODEL
-model, optimizer = train_network(model, train_loader, valid_loader, epochs, print_every, learning_rate, use_gpu)
+model, optimizer, criterion = train_network(model, train_loader, valid_loader, epochs, print_every, learning_rate, use_gpu)
 
 #4. TEST MODEL
 test_model(model, test_loader, criterion, use_gpu)
 
 #5. SAVE MODEL
-save_model(model, epochs, optimizer)
+save_model(model, epochs, optimizer, train_data)
