@@ -1,3 +1,7 @@
+#---------------------------------------------------------------------------------------#
+#TRAIN FUNCTIONS
+#---------------------------------------------------------------------------------------#
+
 #1. argparse
 import argparse
 #2. load and transform pictures/data
@@ -9,6 +13,10 @@ from torchvision import models
 from torch import nn
 from torch import optim
 
+#image mapping, getting it out of the way
+import json
+with open('cat_to_name.json', 'r') as f:
+    cat_to_name = json.load(f)
 
 
 #1. PARSER
@@ -26,6 +34,8 @@ def inputs():
     parser.add_argument('--epochs', default=3, type=int, help='Number of epochs for training (default = 3)')
     parser.add_argument('--gpu', default = True, action='store_true', dest='gpu', help='Use GPU for training')
     parser.add_argument('--print_every', default=5, type=int, help='Number of epochs for training (default = 5)')
+    parser.add_argument('--image_path', default="./flowers/test/102/image_08015.jpg", type=str, help='Image path (default = "./flowers/test/102/image_08015.jpg"')
+    parser.add_argument('--top_k', default=5, type=int, help='Number of outputs for prediction (default = 5)')
     
     #Consolidate inputs 
     inputs = parser.parse_args()
@@ -66,7 +76,7 @@ def data_loader(data_dir):
     valid_loader = torch.utils.data.DataLoader(valid_data, batch_size=25, shuffle=True)
     test_loader = torch.utils.data.DataLoader(test_data, batch_size=25, shuffle=True)
         
-    return train_loader, valid_loader, test_loader
+    return train_loader, valid_loader, test_loader, train_data, valid_data, test_data
 
 
 #3. CLASSIFIER FUNCTION
@@ -139,55 +149,14 @@ def train_network(model, dataloaders, validloaders, epochs, print_every,learning
             optimizer.step()
             running_loss += loss.item()
             if steps % print_every == 0 :
+                model.eval()
                 valid_loss,accuracy = validate(model,validloaders,criterion)
                 print("Epoch {} / {}..".format(e+1,epochs),
                 "loss: {:.4f}".format(running_loss/print_every),
-                "Validateion Loss: {:.3f}.. ".format(valid_loss),
-                "Validation Accuracy: {:.3f}".format(accuracy)/len(validloaders))
+                "Validation Loss: {:.3f}.. ".format(valid_loss),
+                "Validation Accuracy: {:.3f}".format((accuracy)/len(validloaders)))
         running_loss=0
-    return model, optimizer
-
-# Original training function... no longer being used in train.py script
-def train_model(model, epochs, train_loader, valid_loader, criterion, optimizer, use_gpu):
-    steps = 0
-    print_every = 10
-
-    if use_gpu == True:
-        model.to('cuda')
-    else:
-        pass
-        
-    for epoch in range(epochs):
-        running_loss = 0
-        
-        for ii, (inputs, labels) in enumerate(train_loader):
-            steps += 1        
-            inputs, labels = inputs.to('cuda'), labels.to('cuda')
-        
-            optimizer.zero_grad()        
-       
-            outputs = model.forward(inputs)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
-        
-            running_loss += loss.item()
-        
-            if steps % print_every == 0:
-                model.eval()
-
-                with torch.no_grad():
-                    valid_loss, accuracy = validate(model, valid_loader, criterion)
-            
-                print(f"Epoch {epoch+1}/{epochs}..| "
-                      f"Train loss: {running_loss/print_every:.3f}..| "
-                      f"Validation loss: {valid_loss/print_every:.3f}..| "
-                      f"Validation accuracy: {accuracy/len(valid_loader):.3f}|")
-            
-                running_loss = 0
-                model.train()
-
-    return model, optimizer
+    return model, optimizer, criterion
 
 
 #6. TEST MODEL FUNCTION
@@ -197,6 +166,7 @@ def test_model(model, test_loader, criterion, use_gpu):
     else:
         pass
     
+    model.eval()
     with torch.no_grad():
         test_loss, accuracy = validate(model, test_loader, criterion)
                 
@@ -204,32 +174,42 @@ def test_model(model, test_loader, criterion, use_gpu):
 
 
 #7. SAVE MODEL FUNCTION
-def save_model(model, epochs, optimizer):
+def save_model(model, epochs, optimizer, train_data):
     model.cpu()
-
+    model.class_to_idx = train_data.class_to_idx
     checkpoint = {'class_to_idx' : model.class_to_idx,
                   'classifier_state_dict': model.classifier.state_dict(),
                   'epochs': epochs,
                   'state_optimizer': optimizer.state_dict()}
 
     torch.save(checkpoint, 'checkpoint_part2.pth')
+    
+#---------------------------------------------------------------------------------------#
+#PREDICT FUNCTIONS
+#---------------------------------------------------------------------------------------#
+import PIL
+from PIL import Image
+import numpy as np
+
+import matplotlib.pyplot as plt
+import torch.nn.functional as F
+
 
 #8. LOAD MODEL FUNCTION
-comm = '''
-def load_checkpoint(filename):
+def load_checkpoint(filename, hidden_layer1, hidden_layer2, dropout_prob1, dropout_prob2):
     checkpoint = torch.load(filename)
     model = models.vgg16(pretrained=True)
     # Freeze parameters
     for param in model.parameters():
         param.requires_grad = False
-    classifier = nn.Sequential(nn.Linear(25088, 6320, bias=True),
-                           nn.ReLU(),
-                           nn.Dropout(.5),
-                           nn.Linear(6320, 1580, bias=True),
-                           nn.ReLU(),
-                           nn.Dropout(.5),
-                           nn.Linear(1580, 102, bias=True),
-                           nn.LogSoftmax(dim=1))
+    classifier = nn.Sequential(nn.Linear(25088, hidden_layer1, bias=True),
+                               nn.ReLU(),
+                               nn.Dropout(dropout_prob1),
+                               nn.Linear(hidden_layer1, hidden_layer2, bias=True),
+                               nn.ReLU(),
+                               nn.Dropout(dropout_prob2),
+                               nn.Linear(hidden_layer2, 102, bias=True),
+                               nn.LogSoftmax(dim=1))
     
     classifier.load_state_dict(checkpoint['classifier_state_dict'])
     model.classifier = classifier
@@ -240,16 +220,38 @@ def load_checkpoint(filename):
     return (model, optimizer, criterion)
 
 
+def process_image(image_path):
+    img = PIL.Image.open(image_path)
+
+    image_transform = transforms.Compose([transforms.Resize(256),
+                                          transforms.CenterCrop(224),
+                                          transforms.ToTensor(),
+                                          transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
+
+    tensor_image = image_transform(img)
+
+    return tensor_image
 
 
-def load_model(checkpoint_path):
-    trained_model = torch.load(checkpoint_path)
-    model = build_network(arch=trained_model['arch'], hidden_dim=trained_model['hidden_dim'],
-                          output_dim=102, drop_prob=0)
+def predict(image_tensor, model, cat_to_name, top_k):
+    
+    model.eval();
 
-    model.class_to_idx = trained_model['class_to_idx']
-    model.load_state_dict(trained_model['state_dict'])
-    print(f"Successfully loaded model with arch {trained_model['arch']}")
-    return model
+    torch_image = torch.from_numpy(np.expand_dims(image_tensor, axis=0)).type(torch.FloatTensor)
 
-'''
+    model=model.cpu()
+
+    log_probs = model.forward(torch_image)
+
+    linear_probs = torch.exp(log_probs)
+
+    top_probs, top_labels = linear_probs.topk(top_k)
+    
+    top_probs = np.array(top_probs.detach())[0]
+    top_labels = np.array(top_labels.detach())[0]
+    
+    idx_to_class = {val: key for key, val in model.class_to_idx.items()}
+    top_labels = [idx_to_class[flower] for flower in top_labels]
+    top_flowers = [cat_to_name[flower] for flower in top_labels]
+    
+    return top_probs, top_labels, top_flowers
